@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Race Track Shortcuts</title>
+    <style>
+        textarea {
+            font-family: monospace;
+            font-size: 0.5em;
+            resize: none;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .grid {
+            font-family: monospace;
+            display: flex;
+            flex-direction: column;
+        }
+        .row {
+            display: flex;
+        }
+        .cell {
+            min-width: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: white;
+            color: black;
+        }
+        .cell.wall {
+            background-color: black;
+            color: black;
+        }
+        .cell.highlight {
+            background-color: red;
+            color: white;
+        }
+        .cell.target {
+            background-color: yellow;
+            color: black;
+        }
+    </style>
+</head>
+<body>
+<div class="controls">
+    <label for="max_dist">Max Distance:</label>
+    <input type="range" id="max_dist" min="1" max="20" value="2">
+    <span id="max_dist_value">2</span>
+
+    <label for="min_shortcut">Min Shortcut:</label>
+    <input type="range" id="min_shortcut" min="1" max="100" value="1">
+    <span id="min_shortcut_value">1</span>
+
+    <span id="total_shortcuts">Total Shortcuts: 0</span>
+
+    <button id="calculate">Calculate Shortcuts</button>
+    <button id="level_a">Level A</button>
+    <button id="level_b">Level B</button>
+</div>
+
+<textarea id="track" rows="80" cols="142">
+###############
+#...#...#.....#
+#.#.#.#.#.###.#
+#S#...#.#.#...#
+#######.#.#.###
+#######.#.#...#
+#######.#.###.#
+###..E#...#...#
+###.#######.###
+#...###...#...#
+#.#####.#.###.#
+#.#...#.#.#...#
+#.#.#.#.#.#.###
+#...#...#...###
+###############
+</textarea>
+
+<div id="result" style="display: none;">
+    <div id="grid" class="grid"></div>
+</div>
+
+<script>
+    const pos_add = (a, b) => [a[0] + b[0], a[1] + b[1]];
+    const hamming = (a, b) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
+    const adj = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+
+    function find_shortcuts(rank2pos, max_dist, min_shortcut) {
+        const shortcuts = {};
+        for (let end = 0; end < rank2pos.length; end++) {
+            for (let start = 0; start < end - max_dist; start++) {
+                const dist = hamming(rank2pos[start], rank2pos[end]);
+                if (dist <= max_dist && (end - start - dist >= min_shortcut)) {
+                    shortcuts[rank2pos[end]] = shortcuts[rank2pos[end]] || {};
+                    shortcuts[rank2pos[end]][rank2pos[start]] = end - start - dist;
+                }
+            }
+        }
+        return shortcuts;
+    }
+
+    function sorted_elements_of(start, end, path) {
+        let curr = end;
+        let dist = 0;
+        while (curr.toString() !== start.toString()) {
+            path[curr.toString()] = dist++;
+            adj.map(a => pos_add(curr, a))
+                .filter(next => path[next.toString()] === -1)
+                .forEach(next => curr = next);
+        }
+        path[start.toString()] = dist;
+
+        const sorted = Object.entries(path)
+            .sort((a, b) => a[1] - b[1])
+            .map(a => a[0].split(",").map(Number));
+        return sorted;
+    }
+
+    function count_shortcuts(track, max_dist, min_shortcut) {
+        const path = {};
+        let start, end;
+        const lines = track.trim().split(/\r?\n/);
+        console.log(`Number of lines: ${lines.length}`);
+        const lineLengths = lines.map(line => line.length);
+        console.log(`Line lengths: ${lineLengths.join(', ')}`);
+
+        // Ensure all rows are filled with '#' if they are empty
+        const maxLineLength = Math.max(...lineLengths);
+        const filledLines = lines.map(line => {
+            if (line.length < maxLineLength) {
+                return line.padEnd(maxLineLength, '#');
+            }
+            return line;
+        });
+
+        filledLines.forEach((line, i) => {
+            [...line].forEach((char, j) => {
+                if (char === '#') return;
+                if (char === 'S') start = [i, j];
+                if (char === 'E') end = [i, j];
+                path[[i, j].toString()] = -1;
+            });
+        });
+        const sorted = sorted_elements_of(start, end, path);
+        return find_shortcuts(sorted, max_dist, min_shortcut);
+    }
+
+    document.getElementById('calculate').addEventListener('click', calculateShortcuts);
+    document.getElementById('level_a').addEventListener('click', setLevelA);
+    document.getElementById('level_b').addEventListener('click', setLevelB);
+
+    document.getElementById('max_dist').addEventListener('input', updateValues);
+    document.getElementById('min_shortcut').addEventListener('input', updateValues);
+
+    function calculateShortcuts() {
+        const track = document.getElementById('track').value;
+        const max_dist = parseInt(document.getElementById('max_dist').value, 10);
+        const min_shortcut = parseInt(document.getElementById('min_shortcut').value, 10);
+
+        const shortcuts = count_shortcuts(track, max_dist, min_shortcut);
+        console.log(shortcuts);
+
+        // Hide the textarea and controls
+        document.getElementById('track').style.display = 'none';
+        // document.querySelector('.controls').style.display = 'none';
+
+        // Show the result section
+        document.getElementById('result').style.display = 'block';
+
+        // Generate the grid
+        const gridContainer = document.getElementById('grid');
+        gridContainer.innerHTML = '';
+
+        const lines = track.trim().split(/\r?\n/);
+        const grid = lines.map((line, i) => {
+            const row = document.createElement('div');
+            row.className = 'row';
+            console.log(`Row ${i}: ${line.length} cells`);
+            [...line].forEach((char, j) => {
+                const cell = document.createElement('div');
+                cell.id = `${i},${j}`;
+                cell.className = 'cell';
+                if (char === '#') {
+                    cell.classList.add('wall');
+                    cell.textContent = '.';
+                } else {
+                    const cellId = `${i},${j}`;
+                    const outgoingShortcuts = shortcuts[cellId] ? Object.keys(shortcuts[cellId]).length : 0;
+                    cell.textContent = outgoingShortcuts;
+                    cell.addEventListener('mouseenter', () => highlight(cellId, shortcuts));
+                }
+                row.appendChild(cell);
+            });
+            gridContainer.appendChild(row);
+            return row;
+        });
+
+        // Update total shortcuts count
+        const total = Object.keys(shortcuts).reduce((acc, key) => acc + Object.keys(shortcuts[key]).length, 0);
+        document.getElementById('total_shortcuts').textContent = `Total Shortcuts: ${total}`;
+    }
+
+    function setLevelA() {
+        const track = document.getElementById('track').value;
+        const lines = track.trim().split(/\r?\n/);
+        if (lines.length < 20) {
+            // Example input for Level A
+            document.getElementById('max_dist').value = 2;
+            document.getElementById('min_shortcut').value = 1;
+        } else {
+            document.getElementById('max_dist').value = 2;
+            document.getElementById('min_shortcut').value = 100;
+        }
+        updateValues();
+        calculateShortcuts();
+    }
+
+    function setLevelB() {
+        const track = document.getElementById('track').value;
+        const lines = track.trim().split(/\r?\n/);
+        if (lines.length < 20) {
+            // Example input for Level B
+            document.getElementById('max_dist').value = 20;
+            document.getElementById('min_shortcut').value = 50;
+        } else {
+            document.getElementById('max_dist').value = 20;
+            document.getElementById('min_shortcut').value = 100;
+        }
+        updateValues();
+        calculateShortcuts();
+    }
+
+    function updateValues() {
+        const max_dist = document.getElementById('max_dist').value;
+        const min_shortcut = document.getElementById('min_shortcut').value;
+        document.getElementById('max_dist_value').textContent = max_dist;
+        document.getElementById('min_shortcut_value').textContent = min_shortcut;
+        // Recalculate shortcuts with new slider values
+        calculateShortcuts();
+    }
+
+    function highlight(cellId, shortcuts) {
+        const cell = document.getElementById(cellId);
+        if (!cell) return;
+
+        cell.classList.add('highlight');
+
+        const startShortcuts = shortcuts[cellId];
+        if (startShortcuts) {
+            Object.keys(startShortcuts).forEach(targetKey => {
+                const targetCell = document.getElementById(targetKey);
+                if (targetCell) {
+                    targetCell.classList.add('target');
+                    targetCell.dataset.originalText = targetCell.textContent;
+                    targetCell.textContent = startShortcuts[targetKey];
+                }
+            });
+        }
+
+        cell.addEventListener('mouseleave', () => {
+            cell.classList.remove('highlight');
+
+            if (startShortcuts) {
+                Object.keys(startShortcuts).forEach(targetKey => {
+                    const targetCell = document.getElementById(targetKey);
+                    if (targetCell) {
+                        targetCell.classList.remove('target');
+                        targetCell.textContent = targetCell.dataset.originalText;
+                    }
+                });
+            }
+        }, { once: true });
+    }
+</script>
+</body>
+</html>
